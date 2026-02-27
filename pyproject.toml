@@ -1,0 +1,22 @@
+[project]
+name = "fluxbalancer-evaluation"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "domster704",email = "domster704@mail.ru"}
+]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.12"
+aiohttp = "^3.13.3"
+pandas = "^3.0.1"
+numpy = "^2.4.2"
+matplotlib = "^3.10.8"
+
+[tool.poetry]
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
