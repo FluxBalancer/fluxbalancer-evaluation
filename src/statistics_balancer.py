@@ -8,10 +8,9 @@ import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from statistics import fmean
-from typing import Any, Optional
+from typing import Any, Optional, Counter
 
 import aiohttp
-import requests
 
 
 def utc_iso() -> str:
@@ -57,6 +56,7 @@ class RequestRecord:
     response: dict[str, Any]
     signals: dict[str, Any]
     error: str | None = None
+    error_kind: str | None = None
 
 
 @dataclass(slots=True)
@@ -117,7 +117,6 @@ class StatisticsBalancer:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
             await self.session.close()
-
     async def _one_request(self, req_id: str, endpoint: str) -> RequestRecord:
         assert self.session is not None
 
@@ -128,9 +127,12 @@ class StatisticsBalancer:
         status = 0
         raw = b""
         err: str | None = None
+        error_kind: str | None = None
         resp_json: Any = None
+
         upstream_sockets: list[str] = []
         winner_socket: str | None = None
+        replication_error: str | None = None
 
         try:
             async with self.session.get(url) as resp:
@@ -142,6 +144,7 @@ class StatisticsBalancer:
                 )
 
                 winner_socket = resp.headers.get("X-Winner-Socket")
+                replication_error = resp.headers.get("X-Replication-Error")
 
                 r_req = resp.headers.get("X-Replica-Count")
                 r_eff = resp.headers.get("X-Replica-Effective")
@@ -161,7 +164,20 @@ class StatisticsBalancer:
 
         latency_ms = (time.perf_counter() - t0) * 1000.0
         finished_at = utc_iso()
+
         ok = (200 <= status < 300) and (err is None)
+
+        # 🔥 классификация ошибки
+        if err is not None:
+            error_kind = "transport_error"
+        elif replication_error:
+            error_kind = f"replication:{replication_error}"
+        elif status == 504:
+            error_kind = "gateway_timeout"
+        elif status >= 500:
+            error_kind = "upstream_5xx"
+        elif 400 <= status < 500:
+            error_kind = "upstream_4xx"
 
         signals = {
             "cpu_burn": bool(resp_json.get("cpu_burn")) if isinstance(resp_json, dict) else False,
@@ -170,6 +186,7 @@ class StatisticsBalancer:
             "mem_util": resp_json.get("mem_util") if isinstance(resp_json, dict) else None,
             "net_in_bytes": resp_json.get("net_in_bytes") if isinstance(resp_json, dict) else None,
             "net_out_bytes": resp_json.get("net_out_bytes") if isinstance(resp_json, dict) else None,
+            "replication_degraded": replication_error == "degraded",
         }
 
         return RequestRecord(
@@ -184,6 +201,7 @@ class StatisticsBalancer:
             upstream={
                 "sockets": upstream_sockets,
                 "winner_socket": winner_socket,
+                "replication_error": replication_error,
             },
             response={
                 "bytes": int(len(raw)),
@@ -192,6 +210,7 @@ class StatisticsBalancer:
             },
             signals=signals,
             error=err,
+            error_kind=error_kind,
         )
 
     async def wave(self, wave_id: int, endpoints: list[str]) -> None:
@@ -250,11 +269,24 @@ class StatisticsBalancer:
         )
 
     def finalize(self) -> ExperimentRun:
-        all_lat = [req.latency_ms for w in self.waves for req in w.requests]
-        all_ok = [req.ok for w in self.waves for req in w.requests]
+        all_reqs = [req for w in self.waves for req in w.requests]
+        all_lat = [r.latency_ms for r in all_reqs]
+        all_ok = [r.ok for r in all_reqs]
+
+        error_kinds = Counter(r.error_kind or "none" for r in all_reqs)
+        statuses = Counter(str(r.status) for r in all_reqs)
+        replication_errors = Counter(
+            r.upstream.get("replication_error") or "none"
+            for r in all_reqs
+        )
+
+        degraded_count = sum(
+            1 for r in all_reqs
+            if r.upstream.get("replication_degraded") == "true"
+        )
 
         summary = {
-            "total_requests": len(all_lat),
+            "total_requests": len(all_reqs),
             "overall": {
                 "latency_ms": {
                     "mean": float(fmean(all_lat)) if all_lat else 0.0,
@@ -262,11 +294,20 @@ class StatisticsBalancer:
                     "p95": percentile(all_lat, 0.95),
                     "max": float(max(all_lat)) if all_lat else 0.0,
                 },
-                "error_rate": (1.0 - (sum(1 for x in all_ok if x) / len(all_ok))) if all_ok else 0.0,
+                "error_rate": (
+                        1.0 - (sum(1 for x in all_ok if x) / len(all_ok))
+                ) if all_ok else 0.0,
             },
             "replication": {
                 "avg_requested_r": self._requested_r_total / len(all_lat) if all_lat else 0.0,
                 "avg_effective_r": self._effective_r_total / len(all_lat) if all_lat else 0.0,
+                "degraded_rate": degraded_count / len(all_reqs) if all_reqs else 0.0,
+                "errors_by_reason": dict(replication_errors),
+            },
+            "errors": {
+                "by_kind": dict(error_kinds),
+                "by_status": dict(statuses),
+                "degraded_count": degraded_count,
             },
         }
 
@@ -293,27 +334,32 @@ async def main():
 
     balancer_name = "airm"
     replication_name = "hedged"
+    completion_name = "first"
+    weight_name = "entropy"
+
+    seconds = 20
+    waves_count = 20
+    deadline = str(int(seconds * 1000 * 1.5))
 
     factors = {
         "balancer": {"name": balancer_name},
-        "weights": {"name": "entropy"},
+        "weights": {"name": weight_name},
         "replication": {
             "enabled": True,
             "strategy": replication_name,
             "replications_count": 4,
-            "completion": {"strategy": "k_out_of_n", "k": 2},
+            "completion": {"strategy": completion_name, "k": 2},
             "adaptive_limit": True,
-            "deadline_ms": 5500,
+            "deadline_ms": int(deadline),
         },
     }
 
-    seconds = 10
     headers = {
         "X-Balancer-Strategy": balancer_name,
-        "X-Weights-Strategy": "entropy",
-        "X-Balancer-Deadline": str(int(seconds * 1000 * 1.25)),
+        "X-Weights-Strategy": weight_name,
+        "X-Balancer-Deadline": deadline,
         "X-Replications-Strategy": replication_name,
-        "X-Completion-Strategy": "first",
+        "X-Completion-Strategy": completion_name,
     }
 
     # res = requests.get(base_url + f"/cpu?seconds={seconds}", headers=headers)
@@ -324,16 +370,24 @@ async def main():
             headers=headers,
             factors=factors,
             requests_per_wave=20,
-            delay_between_requests_s=0.2,
+            delay_between_requests_s=seconds / 2,
     ) as sb:
-        seconds = 2
-        await sb.wave(1, [f"cpu?seconds={seconds}", f"mem?seconds={seconds}"])
-        await sb.wave(2, [f"cpu?seconds={seconds}", f"mem?seconds={seconds}"])
+        sem = asyncio.Semaphore(10)
+        async def limited_wave(i):
+            async with sem:
+                await sb.wave(i, [f"cpu?seconds={seconds}", f"mem?seconds={seconds}"])
+
+        tasks = [
+            asyncio.create_task(limited_wave(i))
+            for i in range(1, waves_count + 1)
+        ]
+        await asyncio.gather(*tasks)
 
         result_json = sb.dumps()
         print(result_json)
 
-        with open(f"experiments/{balancer_name}_{replication_name}.json", "w", encoding="utf-8") as f:
+        with open(f"experiments/{balancer_name}_{replication_name}_{completion_name}_{weight_name}.json", "w",
+                  encoding="utf-8") as f:
             f.write(result_json)
 
 
