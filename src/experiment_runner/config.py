@@ -1,0 +1,33 @@
+from dataclasses import dataclass
+
+
+@dataclass(slots=True)
+class WorkloadConfig:
+    total_requests: int = 1000
+    concurrency: int = 50
+    mean_interarrival_s: float = 0.05
+
+
+@dataclass(slots=True)
+class DeadlineConfig:
+    multiplier: float = 1.3
+
+
+@dataclass(slots=True)
+class EndpointConfig:
+    cpu_seconds = [1, 2, 2, 2, 3, 4]
+    mem_mb: int = 75
+
+
+@dataclass(slots=True)
+class SystemConfig:
+    base_url: str = "http://127.0.0.1:8000"
+    timeout_s: float = 60.0
+    clear_delay_s: int = 10
+
+
+@dataclass(slots=True)
+class ExperimentConfig:
+    balancers_replication = ["topsis", "airm", "electre"]
+    balancers_baseline = ["saw", "lc"]
+    replication_strategies = ["hedged", "speculative"]

@@ -5,11 +5,12 @@ import hashlib
 import json
 import random
 import time
+from collections import Counter
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import fmean
-from typing import Any, Optional, Counter
+from typing import Any, Optional
 
 import aiohttp
 
@@ -30,17 +31,16 @@ def percentile(values: list[float], q: float) -> float:
     return float(xs[idx])
 
 
-def jitter_delay(delay_s: float) -> float:
-    if delay_s <= 0:
+def jitter_delay(mean_delay_s: float) -> float:
+    if mean_delay_s <= 0:
         return 0.0
-    return random.expovariate(1 / delay_s)
+    return random.expovariate(1 / mean_delay_s)
 
 
 def parse_socket_list(raw: str | None) -> list[str]:
     if not raw:
         return []
-    parts = [p.strip() for p in raw.split(",")]
-    return [p for p in parts if p]
+    return [x.strip() for x in raw.split(",") if x.strip()]
 
 
 @dataclass(slots=True)
@@ -61,24 +61,14 @@ class RequestRecord:
 
 
 @dataclass(slots=True)
-class WaveRecord:
-    wave_id: int
-    planned: dict[str, Any]
-    started_at: str
-    finished_at: str
-    makespan_ms: float
-    requests: list[RequestRecord]
-    by_socket: dict[str, Any]
-
-
-@dataclass(slots=True)
 class ExperimentRun:
     schema: str
     run_id: str
     started_at: str
+    finished_at: str
     base_url: str
     factors: dict[str, Any]
-    waves: list[WaveRecord]
+    requests: list[RequestRecord]
     summary: dict[str, Any]
 
 
@@ -89,22 +79,20 @@ class StatisticsBalancer:
             headers: dict[str, str],
             factors: dict[str, Any],
             *,
-            requests_per_wave: int = 30,
-            delay_between_requests_s: float = 0.3,
-            timeout_total_s: float = 60.0,
+            timeout_total_s: float,
+            deadline_ms: int,
     ):
         self.base_url = base_url.rstrip("/")
         self.headers = headers
         self.factors = factors
-        self.requests_per_wave = requests_per_wave
-        self.delay_between_requests_s = delay_between_requests_s
         self.timeout_total_s = timeout_total_s
+        self.deadline_ms = deadline_ms
 
         self.started_at = utc_iso()
-        self.run_id = f"{self.started_at}__{factors.get('balancer', {}).get('name')}"
-        self.run_id = self.run_id.replace(":", "_")
+        self.finished_at: str | None = None
+        self.run_id = self.started_at.replace(":", "_")
 
-        self.waves: list[WaveRecord] = []
+        self.requests: list[RequestRecord] = []
         self.session: Optional[aiohttp.ClientSession] = None
 
         self._requested_r_total = 0
@@ -116,10 +104,10 @@ class StatisticsBalancer:
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
+        if self.session is not None:
             await self.session.close()
 
-    async def _one_request(self, req_id: str, endpoint: str) -> RequestRecord:
+    async def one_request(self, req_id: str, endpoint: str) -> RequestRecord:
         assert self.session is not None
 
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
@@ -141,10 +129,7 @@ class StatisticsBalancer:
                 status = int(resp.status)
                 raw = await resp.read()
 
-                upstream_sockets = parse_socket_list(
-                    resp.headers.get("X-Upstream-Socket")
-                )
-
+                upstream_sockets = parse_socket_list(resp.headers.get("X-Upstream-Socket"))
                 winner_socket = resp.headers.get("X-Winner-Socket")
                 replication_error = resp.headers.get("X-Replication-Error")
 
@@ -166,10 +151,8 @@ class StatisticsBalancer:
 
         latency_ms = (time.perf_counter() - t0) * 1000.0
         finished_at = utc_iso()
-
         ok = (200 <= status < 300) and (err is None)
 
-        # 🔥 классификация ошибки
         if err is not None:
             error_kind = "transport_error"
         elif replication_error:
@@ -199,14 +182,14 @@ class StatisticsBalancer:
             finished_at=finished_at,
             latency_ms=float(latency_ms),
             status=status,
-            ok=bool(ok),
+            ok=ok,
             upstream={
                 "sockets": upstream_sockets,
                 "winner_socket": winner_socket,
                 "replication_error": replication_error,
             },
             response={
-                "bytes": int(len(raw)),
+                "bytes": len(raw),
                 "sha256": sha256_hex(raw) if raw else "",
                 "json": resp_json if isinstance(resp_json, (dict, list)) else None,
             },
@@ -215,63 +198,13 @@ class StatisticsBalancer:
             error_kind=error_kind,
         )
 
-    async def wave(self, wave_id: int, endpoints: list[str]) -> None:
-        planned = {
-            "requests": self.requests_per_wave,
-            "delay_s": self.delay_between_requests_s,
-        }
-
-        started_at = utc_iso()
-        t0 = time.perf_counter()
-
-        tasks = []
-
-        for i in range(self.requests_per_wave):
-            ep = endpoints[i % len(endpoints)]
-            req_id = f"{wave_id}-{i + 1:04d}"
-            tasks.append(asyncio.create_task(self._one_request(req_id, ep)))
-
-            if i < self.requests_per_wave - 1:
-                await asyncio.sleep(jitter_delay(self.delay_between_requests_s))
-
-        reqs = await asyncio.gather(*tasks)
-
-        makespan_ms = (time.perf_counter() - t0) * 1000.0
-        finished_at = utc_iso()
-
-        winner_counts: dict[str, int] = {}
-        participation_counts: dict[str, int] = {}
-        latency_by_winner: dict[str, list[float]] = {}
-
-        for r in reqs:
-            sockets = r.upstream.get("sockets", []) or []
-            winner = r.upstream.get("winner_socket")
-
-            for s in sockets:
-                participation_counts[s] = participation_counts.get(s, 0) + 1
-
-            if winner:
-                winner_counts[winner] = winner_counts.get(winner, 0) + 1
-                latency_by_winner.setdefault(winner, []).append(r.latency_ms)
-
-        self.waves.append(
-            WaveRecord(
-                wave_id=wave_id,
-                planned=planned,
-                started_at=started_at,
-                finished_at=finished_at,
-                makespan_ms=float(makespan_ms),
-                requests=reqs,
-                by_socket={
-                    "winner_counts": winner_counts,
-                    "participation_counts": participation_counts,
-                    "latency_ms": latency_by_winner,
-                },
-            )
-        )
+    def extend(self, reqs: list[RequestRecord]) -> None:
+        self.requests.extend(reqs)
 
     def finalize(self) -> ExperimentRun:
-        all_reqs = [req for w in self.waves for req in w.requests]
+        self.finished_at = utc_iso()
+
+        all_reqs = self.requests
         all_lat = [r.latency_ms for r in all_reqs]
         all_ok = [r.ok for r in all_reqs]
 
@@ -287,6 +220,22 @@ class StatisticsBalancer:
             if r.signals.get("replication_degraded") is True
         )
 
+        within_deadline_count = sum(
+            1 for r in all_reqs
+            if r.latency_ms <= self.deadline_ms
+        )
+
+        winner_counts = Counter(
+            r.upstream.get("winner_socket")
+            for r in all_reqs
+            if r.upstream.get("winner_socket")
+        )
+
+        participation_counts = Counter()
+        for r in all_reqs:
+            for s in r.upstream.get("sockets", []) or []:
+                participation_counts[s] += 1
+
         summary = {
             "total_requests": len(all_reqs),
             "overall": {
@@ -300,12 +249,19 @@ class StatisticsBalancer:
                 "error_rate": (
                         1.0 - (sum(1 for x in all_ok if x) / len(all_ok))
                 ) if all_ok else 0.0,
+                "within_deadline_rate": (
+                        within_deadline_count / len(all_reqs)
+                ) if all_reqs else 0.0,
             },
             "replication": {
-                "avg_requested_r": self._requested_r_total / len(all_lat) if all_lat else 0.0,
-                "avg_effective_r": self._effective_r_total / len(all_lat) if all_lat else 0.0,
+                "avg_requested_r": self._requested_r_total / len(all_reqs) if all_reqs else 0.0,
+                "avg_effective_r": self._effective_r_total / len(all_reqs) if all_reqs else 0.0,
                 "degraded_rate": degraded_count / len(all_reqs) if all_reqs else 0.0,
                 "errors_by_reason": dict(replication_errors),
+            },
+            "upstreams": {
+                "winner_counts": dict(winner_counts),
+                "participation_counts": dict(participation_counts),
             },
             "errors": {
                 "by_kind": dict(error_kinds),
@@ -315,12 +271,13 @@ class StatisticsBalancer:
         }
 
         return ExperimentRun(
-            schema="fluxbalancer-eval/v1",
+            schema="fluxbalancer-eval/v2",
             run_id=self.run_id,
             started_at=self.started_at,
+            finished_at=self.finished_at,
             base_url=self.base_url,
             factors=self.factors,
-            waves=self.waves,
+            requests=all_reqs,
             summary=summary,
         )
 
@@ -329,135 +286,162 @@ class StatisticsBalancer:
 
 
 BASE_URL = "http://127.0.0.1:8000"
-SECONDS = 2
-WAVES_COUNT = 20
-ALGO_DELAY=5
+OUT_DIR = "experiments_auto"
+ALGO_DELAY = 10
+
+TOTAL_REQUESTS = 10
+CONCURRENCY = 40
+MEAN_INTERARRIVAL_S = 0.05
+TIMEOUT_TOTAL_S = 60.0
+
+CPU_SECONDS_CHOICES = [1, 2, 2, 2, 3, 4]
+MEM_MB = 50
+
+
+def build_endpoint() -> tuple[str, int]:
+    seconds = random.choice(CPU_SECONDS_CHOICES)
+
+    if random.random() < 0.5:
+        return f"cpu?seconds={seconds}", seconds
+
+    return f"mem?seconds={seconds}&mb={MEM_MB}", seconds
+
+
+async def run_load(
+        sb: StatisticsBalancer,
+        *,
+        total_requests: int,
+        concurrency: int,
+        mean_interarrival_s: float,
+) -> None:
+    sem = asyncio.Semaphore(concurrency)
+    tasks: list[asyncio.Task[RequestRecord]] = []
+
+    async def worker(req_id: str, endpoint: str) -> RequestRecord:
+        async with sem:
+            return await sb.one_request(req_id, endpoint)
+
+    for i in range(total_requests):
+        req_id = f"req-{i + 1:05d}"
+        endpoint, seconds = build_endpoint()
+        deadline_ms = int(seconds * 1000 * 1.3)
+        sb.deadline_ms = deadline_ms
+
+        tasks.append(asyncio.create_task(worker(req_id, endpoint)))
+
+        if i < total_requests - 1:
+            await asyncio.sleep(jitter_delay(mean_interarrival_s))
+
+    results = await asyncio.gather(*tasks)
+    sb.extend(results)
 
 
 async def run_experiment(
+        *,
         balancer: str,
-        replication: str | None,
-        adaptive: bool | None,
-        completion: str = "first",
+        replication: str | None = None,
+        adaptive: bool | None = None,
         weights: str = "entropy",
-):
-    seconds = SECONDS
-    deadline = int(seconds * 1000 * 1.5)
-
+) -> None:
     replication_enabled = replication is not None
 
     factors = {
         "balancer": {"name": balancer},
         "weights": {"name": weights},
+        "workload": {
+            "total_requests": TOTAL_REQUESTS,
+            "concurrency": CONCURRENCY,
+            "mean_interarrival_s": MEAN_INTERARRIVAL_S,
+            "mix": {
+                "cpu_seconds_choices": CPU_SECONDS_CHOICES,
+                "mem_mb": MEM_MB,
+            },
+        },
         "replication": {
             "enabled": replication_enabled,
             "strategy": replication,
-            "replications_count": 4,
-            "completion": {"strategy": completion, "k": 2},
+            "replications_count": 2 if replication_enabled else 1,
+            "completion": {"strategy": "first", "k": 1},
             "adaptive_limit": adaptive,
-            "deadline_ms": deadline,
+            "deadline_ms": DEADLINE_MS,
         },
     }
 
     headers = {
         "X-Balancer-Strategy": balancer,
         "X-Weights-Strategy": weights,
-        "X-Balancer-Deadline": str(deadline),
+        "X-Balancer-Deadline": str(DEADLINE_MS),
     }
 
     if replication_enabled:
-        headers.update({
-            "X-Replications-Strategy": replication,
-            "X-Replications-Adaptive": str(adaptive).lower(),
-            "X-Completion-Strategy": completion,
-        })
+        headers["X-Replications-Strategy"] = replication
+        headers["X-Replications-Adaptive"] = str(adaptive).lower()
+        headers["X-Completion-Strategy"] = "first"
 
     async with StatisticsBalancer(
             base_url=BASE_URL,
             headers=headers,
             factors=factors,
-            requests_per_wave=100,
-            delay_between_requests_s=1.0,
+            timeout_total_s=TIMEOUT_TOTAL_S,
+            deadline_ms=DEADLINE_MS,
     ) as sb:
-        sem = asyncio.Semaphore(50)
-        async def limited_wave(i):
-            async with sem:
-                await sb.wave(
-                    i,
-                    [
-                        f"cpu?seconds={seconds}",
-                        f"mem?seconds={seconds}&mb=150",
-                    ],
-                )
-
-        tasks = [
-            asyncio.create_task(limited_wave(i))
-            for i in range(1, WAVES_COUNT + 1)
-        ]
-
-        await asyncio.gather(*tasks)
+        await run_load(
+            sb,
+            total_requests=TOTAL_REQUESTS,
+            concurrency=CONCURRENCY,
+            mean_interarrival_s=MEAN_INTERARRIVAL_S,
+        )
 
         result_json = sb.dumps()
 
-        folder = Path("experiments_auto")
-        folder.mkdir(exist_ok=True)
+    folder = Path(OUT_DIR)
+    folder.mkdir(exist_ok=True)
 
-        name_parts = [balancer]
+    name_parts = [balancer]
+    if replication:
+        name_parts.append(replication)
+    if adaptive is None:
+        name_parts.append("baseline")
+    else:
+        name_parts.append("adaptive" if adaptive else "no_adaptive")
 
-        if replication:
-            name_parts.append(replication)
-
-        if adaptive is not None:
-            name_parts.append("adaptive" if adaptive else "no_adaptive")
-
-        filename = "_".join(name_parts) + ".json"
-
-        with open(folder / filename, "w", encoding="utf-8") as f:
-            f.write(result_json)
-
-        print("finished:", filename)
+    filename = "_".join(name_parts) + ".json"
+    (folder / filename).write_text(result_json, encoding="utf-8")
+    print("finished:", filename)
 
 
-async def clear_system(delay: int):
+async def clear_system(delay: int) -> None:
     async with aiohttp.ClientSession() as session:
         try:
             async with session.post(f"{BASE_URL}/clear") as resp:
                 await resp.read()
         except Exception as e:
             print("clear failed:", e)
-
     await asyncio.sleep(delay)
 
 
-async def orchestrator():
-    balancers_replication = ["topsis", "airm", "electre"]
+async def orchestrator() -> None:
+    balancers_with_replication = ["topsis", "airm", "electre"]
+    balancers_without_replication = ["saw", "lc"]
     replication_strategies = ["hedged", "speculative"]
 
     await clear_system(delay=0)
-    for balancer in balancers_replication:
-        for replication in replication_strategies:
-            for adaptive in [True, False]:
 
+    for balancer in balancers_with_replication + balancers_without_replication:
+        await run_experiment(balancer=balancer)
+        print("clear system...\n")
+        await clear_system(delay=ALGO_DELAY)
+
+    for balancer in balancers_with_replication:
+        for replication in replication_strategies:
+            for adaptive in [False, True]:
                 await run_experiment(
                     balancer=balancer,
                     replication=replication,
                     adaptive=adaptive,
                 )
-
                 print("clear system...\n")
                 await clear_system(delay=ALGO_DELAY)
-
-    balancers_no_replication = ["saw", "lc", "topsis", "airm", "electre"]
-
-    for balancer in balancers_no_replication:
-        await run_experiment(
-            balancer=balancer,
-            replication=None,
-            adaptive=None,
-        )
-
-        print("clear system...\n")
-        await clear_system(delay=ALGO_DELAY)
 
 
 if __name__ == "__main__":
