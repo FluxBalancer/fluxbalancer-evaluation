@@ -325,15 +325,11 @@ class StatisticsBalancer:
         return json.dumps(asdict(self.finalize()), indent=2, ensure_ascii=False)
 
 
-# =========================
-# MAIN
-# =========================
-
 async def main():
     base_url = "http://127.0.0.1:8000"
 
-    balancer_name = "airm"
-    replication_name = "hedged"
+    balancer_name = "electre"
+    replication_name = "speculative"
     completion_name = "first"
     weight_name = "entropy"
 
@@ -386,7 +382,7 @@ async def main():
         result_json = sb.dumps()
         print(result_json)
 
-        with open(f"experiments/replications/no_adaptive/{balancer_name}_{replication_name}_{completion_name}_{weight_name}.json", "w",
+        with open(f"experiments/replications/with_adaptive/{balancer_name}_{replication_name}_{completion_name}_{weight_name}.json", "w",
                   encoding="utf-8") as f:
             f.write(result_json)
 
