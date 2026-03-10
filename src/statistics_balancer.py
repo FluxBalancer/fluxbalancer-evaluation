@@ -282,7 +282,7 @@ class StatisticsBalancer:
 
         degraded_count = sum(
             1 for r in all_reqs
-            if r.upstream.get("replication_degraded") == "true"
+            if r.signals.get("replication_degraded") is True
         )
 
         summary = {
@@ -349,7 +349,7 @@ async def main():
             "strategy": replication_name,
             "replications_count": 4,
             "completion": {"strategy": completion_name, "k": 2},
-            "adaptive_limit": True,
+            "adaptive_limit": False,
             "deadline_ms": int(deadline),
         },
     }
@@ -386,7 +386,7 @@ async def main():
         result_json = sb.dumps()
         print(result_json)
 
-        with open(f"experiments/{balancer_name}_{replication_name}_{completion_name}_{weight_name}.json", "w",
+        with open(f"experiments/replications/no_adaptive/{balancer_name}_{replication_name}_{completion_name}_{weight_name}.json", "w",
                   encoding="utf-8") as f:
             f.write(result_json)
 
