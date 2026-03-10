@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+import json
+from dataclasses import dataclass, asdict
 from typing import Any
 
 
@@ -26,3 +27,6 @@ class ExperimentRun:
     factors: dict[str, Any]
     requests: list[RequestRecord]
     summary: dict[str, Any]
+
+    def dumps(self) -> str:
+        return json.dumps(asdict(self), indent=2, ensure_ascii=False)

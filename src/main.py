@@ -1,17 +1,43 @@
 import asyncio
 
-from experiment_runner.config import ExperimentConfig
-from experiment_runner.orchestrator import run_single
+from src.experiment_runner.config import experiment_config
+from src.experiment_runner.orchestrator import run_single, clear_system
+from src.experiment_runner.storage import create_experiment_dirs, save_experiment
 
 
 async def main():
-    for balancer in ExperimentConfig.balancers_baseline:
-        await run_single(balancer)
+    dirs = create_experiment_dirs()
 
-    for balancer in ExperimentConfig.balancers_replication:
-        for strategy in ExperimentConfig.replication_strategies:
-            for adaptive in [True, False]:
-                await run_single(balancer, strategy, adaptive)
+    await clear_system(delay=0.01)
+    for balancer in (
+        experiment_config.balancers_baseline + experiment_config.balancers_replication
+    ):
+        run = await run_single(balancer)
+
+        save_experiment(
+            dirs["baseline"],
+            balancer,
+            run.dumps(),
+        )
+        await clear_system()
+
+    for balancer in experiment_config.balancers_replication:
+        for strategy in experiment_config.replication_strategies:
+            run = await run_single(balancer, strategy, False)
+            save_experiment(
+                dirs["non_adaptive"],
+                f"{balancer}_{strategy}",
+                run.dumps(),
+            )
+
+            run = await run_single(balancer, strategy, True)
+
+            save_experiment(
+                dirs["adaptive"],
+                f"{balancer}_{strategy}",
+                run.dumps(),
+            )
+            await clear_system()
 
 
 if __name__ == "__main__":

@@ -22,7 +22,7 @@ class EndpointConfig:
 @dataclass(slots=True)
 class SystemConfig:
     base_url: str = "http://127.0.0.1:8000"
-    timeout_s: float = 60.0
+    timeout_s: float = 100.0
     clear_delay_s: int = 10
 
 
@@ -31,3 +31,10 @@ class ExperimentConfig:
     balancers_replication = ["topsis", "airm", "electre"]
     balancers_baseline = ["saw", "lc"]
     replication_strategies = ["hedged", "speculative"]
+
+
+workload_config = WorkloadConfig()
+deadline_config = DeadlineConfig()
+endpoint_config = EndpointConfig()
+system_config = SystemConfig()
+experiment_config = ExperimentConfig()

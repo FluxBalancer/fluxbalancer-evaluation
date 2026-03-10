@@ -3,8 +3,8 @@ import time
 
 import aiohttp
 
-from models import RequestRecord
-from utils import utc_iso, sha256_hex, parse_socket_list
+from src.experiment_runner.models import RequestRecord
+from src.experiment_runner.utils import utc_iso, sha256_hex, parse_socket_list
 
 
 class HTTPClient:
@@ -16,13 +16,23 @@ class HTTPClient:
 
     async def __aenter__(self):
         timeout = aiohttp.ClientTimeout(total=self.timeout)
-        self.session = aiohttp.ClientSession(headers=self.headers, timeout=timeout)
+        connector = aiohttp.TCPConnector(
+            limit=0,
+            ttl_dns_cache=300,
+        )
+        self.session = aiohttp.ClientSession(
+            headers=self.headers,
+            connector=connector,
+            timeout=timeout
+        )
         return self
 
     async def __aexit__(self, *args):
         await self.session.close()
 
-    async def request(self, req_id: str, endpoint: str, headers: dict | None = None) -> RequestRecord:
+    async def request(
+        self, req_id: str, endpoint: str, headers: dict | None = None
+    ) -> RequestRecord:
         url = f"{self.base_url}/{endpoint}"
         started = utc_iso()
         t0 = time.perf_counter()
