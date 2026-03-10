@@ -7,6 +7,7 @@ import random
 import time
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
+from pathlib import Path
 from statistics import fmean
 from typing import Any, Optional, Counter
 
@@ -32,7 +33,7 @@ def percentile(values: list[float], q: float) -> float:
 def jitter_delay(delay_s: float) -> float:
     if delay_s <= 0:
         return 0.0
-    return random.uniform(0.3 * delay_s, delay_s)
+    return random.expovariate(1 / delay_s)
 
 
 def parse_socket_list(raw: str | None) -> list[str]:
@@ -117,6 +118,7 @@ class StatisticsBalancer:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         if self.session:
             await self.session.close()
+
     async def _one_request(self, req_id: str, endpoint: str) -> RequestRecord:
         assert self.session is not None
 
@@ -292,6 +294,7 @@ class StatisticsBalancer:
                     "mean": float(fmean(all_lat)) if all_lat else 0.0,
                     "p50": percentile(all_lat, 0.50),
                     "p95": percentile(all_lat, 0.95),
+                    "p99": percentile(all_lat, 0.99),
                     "max": float(max(all_lat)) if all_lat else 0.0,
                 },
                 "error_rate": (
@@ -325,67 +328,137 @@ class StatisticsBalancer:
         return json.dumps(asdict(self.finalize()), indent=2, ensure_ascii=False)
 
 
-async def main():
-    base_url = "http://127.0.0.1:8000"
+BASE_URL = "http://127.0.0.1:8000"
+SECONDS = 2
+WAVES_COUNT = 20
+ALGO_DELAY=5
 
-    balancer_name = "electre"
-    replication_name = "speculative"
-    completion_name = "first"
-    weight_name = "entropy"
 
-    seconds = 20
-    waves_count = 20
-    deadline = str(int(seconds * 1000 * 1.5))
+async def run_experiment(
+        balancer: str,
+        replication: str | None,
+        adaptive: bool | None,
+        completion: str = "first",
+        weights: str = "entropy",
+):
+    seconds = SECONDS
+    deadline = int(seconds * 1000 * 1.5)
+
+    replication_enabled = replication is not None
 
     factors = {
-        "balancer": {"name": balancer_name},
-        "weights": {"name": weight_name},
+        "balancer": {"name": balancer},
+        "weights": {"name": weights},
         "replication": {
-            "enabled": True,
-            "strategy": replication_name,
+            "enabled": replication_enabled,
+            "strategy": replication,
             "replications_count": 4,
-            "completion": {"strategy": completion_name, "k": 2},
-            "adaptive_limit": False,
-            "deadline_ms": int(deadline),
+            "completion": {"strategy": completion, "k": 2},
+            "adaptive_limit": adaptive,
+            "deadline_ms": deadline,
         },
     }
 
     headers = {
-        "X-Balancer-Strategy": balancer_name,
-        "X-Weights-Strategy": weight_name,
-        "X-Balancer-Deadline": deadline,
-        "X-Replications-Strategy": replication_name,
-        "X-Completion-Strategy": completion_name,
+        "X-Balancer-Strategy": balancer,
+        "X-Weights-Strategy": weights,
+        "X-Balancer-Deadline": str(deadline),
     }
 
-    # res = requests.get(base_url + f"/cpu?seconds={seconds}", headers=headers)
-    # print(res.text)
+    if replication_enabled:
+        headers.update({
+            "X-Replications-Strategy": replication,
+            "X-Replications-Adaptive": str(adaptive).lower(),
+            "X-Completion-Strategy": completion,
+        })
 
     async with StatisticsBalancer(
-            base_url=base_url,
+            base_url=BASE_URL,
             headers=headers,
             factors=factors,
-            requests_per_wave=20,
-            delay_between_requests_s=seconds / 2,
+            requests_per_wave=100,
+            delay_between_requests_s=1.0,
     ) as sb:
-        sem = asyncio.Semaphore(10)
+        sem = asyncio.Semaphore(50)
         async def limited_wave(i):
             async with sem:
-                await sb.wave(i, [f"cpu?seconds={seconds}", f"mem?seconds={seconds}"])
+                await sb.wave(
+                    i,
+                    [
+                        f"cpu?seconds={seconds}",
+                        f"mem?seconds={seconds}&mb=150",
+                    ],
+                )
 
         tasks = [
             asyncio.create_task(limited_wave(i))
-            for i in range(1, waves_count + 1)
+            for i in range(1, WAVES_COUNT + 1)
         ]
+
         await asyncio.gather(*tasks)
 
         result_json = sb.dumps()
-        print(result_json)
 
-        with open(f"experiments/replications/with_adaptive/{balancer_name}_{replication_name}_{completion_name}_{weight_name}.json", "w",
-                  encoding="utf-8") as f:
+        folder = Path("experiments_auto")
+        folder.mkdir(exist_ok=True)
+
+        name_parts = [balancer]
+
+        if replication:
+            name_parts.append(replication)
+
+        if adaptive is not None:
+            name_parts.append("adaptive" if adaptive else "no_adaptive")
+
+        filename = "_".join(name_parts) + ".json"
+
+        with open(folder / filename, "w", encoding="utf-8") as f:
             f.write(result_json)
+
+        print("finished:", filename)
+
+
+async def clear_system(delay: int):
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(f"{BASE_URL}/clear") as resp:
+                await resp.read()
+        except Exception as e:
+            print("clear failed:", e)
+
+    await asyncio.sleep(delay)
+
+
+async def orchestrator():
+    balancers_replication = ["topsis", "airm", "electre"]
+    replication_strategies = ["hedged", "speculative"]
+
+    await clear_system(delay=0)
+    for balancer in balancers_replication:
+        for replication in replication_strategies:
+            for adaptive in [True, False]:
+
+                await run_experiment(
+                    balancer=balancer,
+                    replication=replication,
+                    adaptive=adaptive,
+                )
+
+                print("clear system...\n")
+                await clear_system(delay=ALGO_DELAY)
+
+    balancers_no_replication = ["saw", "lc", "topsis", "airm", "electre"]
+
+    for balancer in balancers_no_replication:
+        await run_experiment(
+            balancer=balancer,
+            replication=None,
+            adaptive=None,
+        )
+
+        print("clear system...\n")
+        await clear_system(delay=ALGO_DELAY)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(orchestrator())
