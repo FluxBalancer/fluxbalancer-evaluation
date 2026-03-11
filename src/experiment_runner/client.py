@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 
@@ -19,6 +20,7 @@ class HTTPClient:
         connector = aiohttp.TCPConnector(
             limit=0,
             ttl_dns_cache=300,
+            force_close=True
         )
         self.session = aiohttp.ClientSession(
             headers=self.headers,
@@ -28,7 +30,9 @@ class HTTPClient:
         return self
 
     async def __aexit__(self, *args):
-        await self.session.close()
+        if self.session:
+            await self.session.close()
+        await asyncio.sleep(0)
 
     async def request(
         self, req_id: str, endpoint: str, headers: dict | None = None
@@ -55,6 +59,19 @@ class HTTPClient:
                 sockets = parse_socket_list(resp.headers.get("X-Upstream-Socket"))
                 winner = resp.headers.get("X-Winner-Socket")
                 repl_error = resp.headers.get("X-Replication-Error")
+
+                # Для обычных балансировщиков
+                if not winner:
+                    # Для HAProxy
+                    backend = resp.headers.get("X-Backend-Server")
+
+                    if not backend:
+                        backend = resp.headers.get("X-Backend-Node") or resp.headers.get("X-Backend-Port")
+
+                    if backend:
+                        winner = backend
+                        if not sockets:
+                            sockets = [backend]
 
                 try:
                     resp_json = json.loads(raw.decode())

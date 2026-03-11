@@ -6,7 +6,7 @@ from src.experiment_runner.client import HTTPClient
 from src.experiment_runner.config import *
 from src.experiment_runner.experiment import build_run
 from src.experiment_runner.loadgen import run_load
-from src.experiment_runner.models import ExperimentRun
+from src.experiment_runner.models import ExperimentRun, RequestRecord
 
 
 async def clear_system(delay: float | None = None):
@@ -35,7 +35,7 @@ async def run_single(balancer, replication=None, adaptive=None) -> ExperimentRun
         headers=headers,
         timeout=system_config.timeout_s,
     ) as client:
-        reqs = await run_load(client, workload_config, deadline_config)
+        reqs: list[RequestRecord] = await run_load(client, workload_config, deadline_config)
 
     run = build_run(
         system_config.base_url,

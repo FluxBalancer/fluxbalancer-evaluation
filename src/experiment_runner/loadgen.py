@@ -4,6 +4,7 @@ import random
 from src.experiment_runner.client import HTTPClient
 from src.experiment_runner.config import WorkloadConfig, DeadlineConfig
 from src.experiment_runner.config import endpoint_config
+from src.experiment_runner.models import RequestRecord
 from src.experiment_runner.utils import jitter_delay
 
 
@@ -18,10 +19,10 @@ def build_endpoint():
 
 async def run_load(
     client: HTTPClient, config: WorkloadConfig, deadline_cfg: DeadlineConfig
-):
+) -> list[RequestRecord]:
     sem = asyncio.Semaphore(config.concurrency)
 
-    async def worker(i):
+    async def worker(i) -> RequestRecord:
         endpoint, seconds = build_endpoint()
 
         deadline_ms = int(seconds * 1000 * deadline_cfg.multiplier)
