@@ -13,13 +13,13 @@ class WorkloadConfig:
 
 @dataclass(slots=True)
 class DeadlineConfig:
-    multiplier: float = 1.3
+    multiplier: float = 3
 
 
 @dataclass(slots=True)
 class EndpointConfig:
-    cpu_seconds = [1, 2, 2, 2, 3, 4]
-    # cpu_seconds = [10, 11, 11, 12, 14]
+    # cpu_seconds: tuple[int, ...]= tuple(range(1, 5))
+    cpu_seconds: tuple[int, ...]= tuple(range(10, 16))
     # cpu_seconds: tuple[int, ...] = tuple(range(5, 16))
     mem_mb: int = 75
 

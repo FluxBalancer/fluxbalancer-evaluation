@@ -53,5 +53,5 @@ async def main_haproxy():
 
 
 if __name__ == "__main__":
-    # asyncio.run(main())
-    asyncio.run(main_haproxy())
+    asyncio.run(main())
+    # asyncio.run(main_haproxy())
