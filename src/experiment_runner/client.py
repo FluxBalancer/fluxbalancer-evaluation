@@ -52,7 +52,6 @@ class HTTPClient:
 
         try:
             async with self.session.get(url, headers=headers) as resp:
-
                 status = resp.status
                 raw = await resp.read()
 

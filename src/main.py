@@ -10,7 +10,7 @@ async def main():
 
     await clear_system(delay=5)
     for balancer in (
-        experiment_config.balancers_baseline + experiment_config.balancers_replication
+            experiment_config.balancers_baseline + experiment_config.balancers_replication
     ):
         run = await run_single(balancer)
 
@@ -21,24 +21,36 @@ async def main():
         )
         await clear_system()
 
-    # for balancer in experiment_config.balancers_replication:
-    #     for strategy in experiment_config.replication_strategies:
-    #         run = await run_single(balancer, strategy, False)
-    #         save_experiment(
-    #             dirs["non_adaptive"],
-    #             f"{balancer}_{strategy}",
-    #             run.dumps(),
-    #         )
-    #
-    #         run = await run_single(balancer, strategy, True)
-    #
-    #         save_experiment(
-    #             dirs["adaptive"],
-    #             f"{balancer}_{strategy}",
-    #             run.dumps(),
-    #         )
-    #         await clear_system()
+    for balancer in experiment_config.balancers_replication:
+        for strategy in experiment_config.replication_strategies:
+            run = await run_single(balancer, strategy, False)
+            save_experiment(
+                dirs["non_adaptive"],
+                f"{balancer}_{strategy}",
+                run.dumps(),
+            )
+
+            run = await run_single(balancer, strategy, True)
+
+            save_experiment(
+                dirs["adaptive"],
+                f"{balancer}_{strategy}",
+                run.dumps(),
+            )
+            await clear_system()
+
+
+async def main_haproxy():
+    dirs = create_experiment_dirs()
+    balancer = "haproxy_random"
+    run = await run_single(balancer)
+
+    save_experiment(
+        dirs["baseline"],
+        balancer,
+        run.dumps(),
+    )
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main_haproxy())
