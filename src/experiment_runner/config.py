@@ -18,7 +18,8 @@ class DeadlineConfig:
 
 @dataclass(slots=True)
 class EndpointConfig:
-    # cpu_seconds: tuple[int, ...]= tuple(range(1, 5))
+    # cpu_seconds: tuple[int, ...] = (1, 2, 2, 2, 3, 4)
+    # cpu_seconds: tuple[int, ...] = (1, 2, 3, 5, 8, 13)
     cpu_seconds: tuple[int, ...]= tuple(range(10, 16))
     # cpu_seconds: tuple[int, ...] = tuple(range(5, 16))
     mem_mb: int = 75
