@@ -5,14 +5,17 @@ from src.experiment_runner.models import RequestRecord
 from src.experiment_runner.utils import percentile
 
 
-def build_summary(reqs: list[RequestRecord], deadline_ms: int):
+def build_summary(reqs: list[RequestRecord]):
     lat: list[float] = [r.latency_ms for r in reqs]
     ok: list[bool] = [r.ok for r in reqs]
 
     statuses = Counter(str(r.status) for r in reqs)
     error_kinds = Counter(r.error_kind or "none" for r in reqs)
 
-    within_deadline: int = sum(1 for r in reqs if r.latency_ms <= deadline_ms)
+    within_deadline = sum(
+        1 for r in reqs
+        if r.deadline_ms and r.latency_ms <= r.deadline_ms
+    )
 
     winner_counts = Counter(
         r.upstream.get("winner_socket") for r in reqs if r.upstream.get("winner_socket")

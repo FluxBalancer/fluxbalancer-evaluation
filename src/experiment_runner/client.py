@@ -20,7 +20,7 @@ class HTTPClient:
         connector = aiohttp.TCPConnector(
             limit=0,
             ttl_dns_cache=300,
-            force_close=True
+            force_close=False
         )
         self.session = aiohttp.ClientSession(
             headers=self.headers,
@@ -101,4 +101,5 @@ class HTTPClient:
             signals=resp_json if isinstance(resp_json, dict) else {},
             error=error,
             error_kind=None,
+            deadline_ms=-1
         )

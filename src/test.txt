@@ -1,0 +1,36 @@
+Replication targets: [ReplicationTarget(node_id='192.168.68.67_GQW5_50051', host='192.168.68.67', port=8006, delay_ms=0), ReplicationTarget(node_id='192.168.68.60_GQW_50051', host='192.168.68.60', port=8001, delay_ms=1058), ReplicationTarget(node_id='192.168.68.69_GQW2_50051', host='192.168.68.69', port=8005, delay_ms=2116)]
+Create replication on 192.168.68.67:8006
+Replication targets: [ReplicationTarget(node_id='192.168.68.67_GQW5_50051', host='192.168.68.67', port=8006, delay_ms=0), ReplicationTarget(node_id='192.168.68.60_GQW_50051', host='192.168.68.60', port=8001, delay_ms=1024), ReplicationTarget(node_id='192.168.68.69_GQW2_50051', host='192.168.68.69', port=8005, delay_ms=2048)]
+Create replication on 192.168.68.67:8006
+Create replication on 192.168.68.67:8006
+Create replication on 192.168.68.67:8006
+Create replication on 192.168.68.64:8005
+Replication targets: [ReplicationTarget(node_id='192.168.68.69_GQW2_50051', host='192.168.68.69', port=8001, delay_ms=0), ReplicationTarget(node_id='192.168.68.66_GQW4_50051', host='192.168.68.66', port=8001, delay_ms=546), ReplicationTarget(node_id='192.168.68.67_GQW5_50051', host='192.168.68.67', port=8001, delay_ms=1092)]
+Create replication on 192.168.68.69:8001
+INFO:     127.0.0.1:59444 - "GET /mem?seconds=2&fail_rate=0.03&slow_rate=0.05&slow_multiplier=2.0&jitter_mean=0.3&mb=90 HTTP/1.1" 200 OK
+Create replication on 192.168.68.67:8006
+Create replication on 192.168.68.67:8001
+Create replication on 192.168.68.67:8006
+Create replication on 192.168.68.63:8005
+Create replication on 192.168.68.64:8001
+Create replication on 192.168.68.64:8001
+Create replication on 192.168.68.68:8006
+Create replication on 192.168.68.67:8006
+Create replication on 192.168.68.64:8001
+Create replication on 192.168.68.67:8006
+Replication targets: [ReplicationTarget(node_id='192.168.68.69_GQW2_50051', host='192.168.68.69', port=8001, delay_ms=0), ReplicationTarget(node_id='192.168.68.66_GQW4_50051', host='192.168.68.66', port=8006, delay_ms=579), ReplicationTarget(node_id='192.168.68.64_GQW1_50051', host='192.168.68.64', port=8005, delay_ms=1158)]
+Create replication on 192.168.68.69:8001
+INFO:     127.0.0.1:59396 - "GET /mem?seconds=2&fail_rate=0.03&slow_rate=0.05&slow_multiplier=2.0&jitter_mean=0.3&mb=90 HTTP/1.1" 200 OK
+Create replication on 192.168.68.66:8006
+Create replication on 192.168.68.68:8006
+Replication targets: [ReplicationTarget(node_id='192.168.68.69_GQW2_50051', host='192.168.68.69', port=8005, delay_ms=0), ReplicationTarget(node_id='192.168.68.64_GQW1_50051', host='192.168.68.64', port=8002, delay_ms=565), ReplicationTarget(node_id='192.168.68.60_GQW_50051', host='192.168.68.60', port=8002, delay_ms=1130)]
+Create replication on 192.168.68.69:8005
+INFO:     127.0.0.1:59566 - "GET /cpu?seconds=2&fail_rate=0.03&slow_rate=0.05&slow_multiplier=2.0&jitter_mean=0.3 HTTP/1.1" 200 OK
+Replication targets: [ReplicationTarget(node_id='192.168.68.69_GQW2_50051', host='192.168.68.69', port=8005, delay_ms=0), ReplicationTarget(node_id='192.168.68.64_GQW1_50051', host='192.168.68.64', port=8002, delay_ms=598), ReplicationTarget(node_id='192.168.68.60_GQW_50051', host='192.168.68.60', port=8002, delay_ms=1196)]
+Create replication on 192.168.68.69:8005
+Create replication on 192.168.68.66:8006
+Create replication on 192.168.68.66:8006
+Create replication on 192.168.68.66:8006
+INFO:     127.0.0.1:59603 - "GET /cpu?seconds=2&fail_rate=0.03&slow_rate=0.05&slow_multiplier=2.0&jitter_mean=0.3 HTTP/1.1" 200 OK
+Create replication on 192.168.68.66:8006
+Replication targets: [ReplicationTarget(node_id='192

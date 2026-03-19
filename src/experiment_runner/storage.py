@@ -2,11 +2,11 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-EXPERIMENTS_ROOT = PROJECT_ROOT / "src/assets/experiments"
+EXPERIMENTS_ROOT = PROJECT_ROOT / "src/assets/experiments/error_new6"
 
 
-def create_experiment_dirs() -> dict[str, Path]:
-    ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+def create_experiment_dirs(series_name: str | None = None) -> dict[str, Path]:
+    ts = series_name or datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     run_dir = EXPERIMENTS_ROOT / ts
 
     baseline = run_dir / "baseline"

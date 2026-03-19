@@ -15,6 +15,7 @@ class RequestRecord:
     signals: dict[str, Any]
     error: str | None
     error_kind: str | None
+    deadline_ms: int
 
 
 @dataclass(slots=True)
