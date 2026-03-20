@@ -13,8 +13,7 @@ def build_summary(reqs: list[RequestRecord]):
     error_kinds = Counter(r.error_kind or "none" for r in reqs)
 
     within_deadline = sum(
-        1 for r in reqs
-        if r.deadline_ms and r.latency_ms <= r.deadline_ms
+        1 for r in reqs if r.deadline_ms and r.latency_ms <= r.deadline_ms
     )
 
     winner_counts = Counter(

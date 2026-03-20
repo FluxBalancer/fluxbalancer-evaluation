@@ -13,11 +13,11 @@ def sha256_hex(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-
 def percentile(values, q):
     if not values:
         return 0.0
     return float(np.percentile(np.asarray(values, dtype=float), q * 100))
+
 
 def jitter_delay(mean):
     return random.expovariate(1 / mean)

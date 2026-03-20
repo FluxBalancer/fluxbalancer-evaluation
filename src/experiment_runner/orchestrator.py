@@ -6,7 +6,7 @@ from src.experiment_runner.client import HTTPClient
 from src.experiment_runner.config import *
 from src.experiment_runner.experiment import build_run
 from src.experiment_runner.loadgen import run_load, run_warmup
-from src.experiment_runner.models import ExperimentRun, RequestRecord
+from src.experiment_runner.models import ExperimentRun
 from src.experiment_runner.workload_plan import build_workload_plan
 
 
@@ -18,7 +18,9 @@ async def clear_system(delay: float | None = None):
     await asyncio.sleep(delay or system_config.clear_delay_s)
 
 
-async def run_single(balancer, replication=None, adaptive=False, seed: int = 12345) -> ExperimentRun:
+async def run_single(
+        balancer, replication=None, adaptive=False, seed: int = 12345
+) -> ExperimentRun:
     headers = {
         "X-Balancer-Strategy": balancer,
         "X-Weights-Strategy": "entropy",

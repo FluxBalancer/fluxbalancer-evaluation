@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(slots=True)
 class WorkloadConfig:
-    total_requests: int = 3000
+    total_requests: int = 5000
     concurrency: int = 80
     mean_interarrival_s: float = 0.04
     warmup_requests: int = 600
@@ -22,7 +22,7 @@ class EndpointConfig:
     # cpu_seconds: tuple[int, ...] = (1, 2, 3, 5, 8, 13)
     # cpu_seconds: tuple[int, ...]= tuple(range(10, 16))
     # cpu_seconds: tuple[int, ...] = tuple(range(50, 60))
-    mem_mb: int = 75
+    mem_mb: int = 85
 
 
 @dataclass(slots=True)

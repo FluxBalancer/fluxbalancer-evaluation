@@ -17,15 +17,9 @@ class HTTPClient:
 
     async def __aenter__(self):
         timeout = aiohttp.ClientTimeout(total=self.timeout)
-        connector = aiohttp.TCPConnector(
-            limit=0,
-            ttl_dns_cache=300,
-            force_close=False
-        )
+        connector = aiohttp.TCPConnector(limit=0, ttl_dns_cache=300, force_close=False)
         self.session = aiohttp.ClientSession(
-            headers=self.headers,
-            connector=connector,
-            timeout=timeout
+            headers=self.headers, connector=connector, timeout=timeout
         )
         return self
 
@@ -35,7 +29,7 @@ class HTTPClient:
         await asyncio.sleep(0)
 
     async def request(
-        self, req_id: str, endpoint: str, headers: dict | None = None
+            self, req_id: str, endpoint: str, headers: dict | None = None
     ) -> RequestRecord:
         url = f"{self.base_url}/{endpoint}"
         started = utc_iso()
@@ -65,7 +59,9 @@ class HTTPClient:
                     backend = resp.headers.get("X-Backend-Server")
 
                     if not backend:
-                        backend = resp.headers.get("X-Backend-Node") or resp.headers.get("X-Backend-Port")
+                        backend = resp.headers.get(
+                            "X-Backend-Node"
+                        ) or resp.headers.get("X-Backend-Port")
 
                     if backend:
                         winner = backend
@@ -101,5 +97,5 @@ class HTTPClient:
             signals=resp_json if isinstance(resp_json, dict) else {},
             error=error,
             error_kind=None,
-            deadline_ms=-1
+            deadline_ms=-1,
         )
