@@ -43,6 +43,7 @@ class HTTPClient:
         sockets = []
         winner = None
         repl_error = None
+        balancer_error = None
 
         try:
             async with self.session.get(url, headers=headers) as resp:
@@ -52,6 +53,7 @@ class HTTPClient:
                 sockets = parse_socket_list(resp.headers.get("X-Upstream-Socket"))
                 winner = resp.headers.get("X-Winner-Socket")
                 repl_error = resp.headers.get("X-Replication-Error")
+                balancer_error = resp.headers.get("X-Balancer-Error")
 
                 # Для обычных балансировщиков
                 if not winner:
@@ -88,6 +90,7 @@ class HTTPClient:
                 "sockets": sockets,
                 "winner_socket": winner,
                 "replication_error": repl_error,
+                "balancer_error": balancer_error
             },
             response={
                 "bytes": len(raw),

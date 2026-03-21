@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass(slots=True)
 class WorkloadConfig:
-    total_requests: int = 5000
+    total_requests: int = 10000
     concurrency: int = 80
     mean_interarrival_s: float = 0.04
     warmup_requests: int = 600
@@ -42,7 +42,7 @@ class ExperimentConfig:
 
 @dataclass(slots=True)
 class FailureConfig:
-    fail_rate: float = 0.02
+    fail_rate: float = 0.0
     slow_rate: float = 0.07
     slow_multiplier: float = 3.0
     jitter_mean: float = 0.2

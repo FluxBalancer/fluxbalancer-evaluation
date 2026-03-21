@@ -7,7 +7,8 @@ from src.experiment_runner.storage import create_experiment_dirs, save_experimen
 
 async def main():
     base_seed = 10_000
-    for iteration in range(10):
+    for iteration in range(40
+                           ):
         seed = base_seed + iteration
         print(f"Iteration №{iteration}, seed={seed}")
 

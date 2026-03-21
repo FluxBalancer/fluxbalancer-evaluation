@@ -3,7 +3,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 # EXPERIMENTS_ROOT = PROJECT_ROOT / "src/assets/experiments/error_new10_adaptive"
-EXPERIMENTS_ROOT = PROJECT_ROOT / "src/assets/experiments/error_new13"
+EXPERIMENTS_ROOT = PROJECT_ROOT / "src/assets/experiments/error_new16_low_error"
 
 
 def create_experiment_dirs(series_name: str | None = None) -> dict[str, Path]:
